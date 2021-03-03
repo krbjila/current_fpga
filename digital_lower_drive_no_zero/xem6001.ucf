@@ -89,6 +89,9 @@ NET "clk_100"      LOC="T8"  | IOSTANDARD="LVCMOS33";
 #NET "zbus<12>"  LOC="B14" | IOSTANDARD="LVCMOS33";
 #NET "zbus<13>"  LOC="C13" | IOSTANDARD="LVCMOS33";
 
+# Line trigger in
+NET "line_trigger_in"	LOC="C8" | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;
+
 # Port JP2 (ybus) ##########################################################
 #NET "yclk_100"     LOC="J4"  | IOSTANDARD="LVCMOS33";
 NET "logic_out<0>"   LOC="R2"  | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;

@@ -17,7 +17,9 @@ entity sequencer is
 		-- 100 MHz from PLL --
 		clk_100 : in std_logic;	
         -- sequence out --
-        logic_out : inout std_logic_vector(63 downto 0) := (others => '0')
+        logic_out : inout std_logic_vector(63 downto 0) := (others => '0');
+		  -- line trigger in --
+		  line_trigger_in : in std_logic := '0'
 	);
 end sequencer;
 
@@ -72,6 +74,17 @@ architecture arch of sequencer is
         data_o        : out std_logic_vector(data_width - 1 downto 0)
     );
     end component;
+	 
+	 attribute ASYNC_REG : string;
+	 attribute RLOC : string;
+	 
+	 signal trigger : std_logic := '0';
+	 signal trigger_ff0 : std_logic := '0';
+	 signal trigger_ff1 : std_logic := '0';
+	 
+	 -- Tells ISE to synthesize FFs
+	 attribute ASYNC_REG of trigger_ff0 : signal is "TRUE";
+	 attribute ASYNC_REG of trigger_ff1 : signal is "TRUE";
 
 begin
 
@@ -103,6 +116,16 @@ ram_clk <= clk;
             clk_50 <= not clk_50;
         end if;
     end process;
+	 
+	 -- Synchronize line trigger signal to clk_100
+	 line_trig : process (clk_100) is
+	 begin
+		if rising_edge(clk_100) then
+			trigger_ff0 <= line_trigger_in;
+			trigger_ff1 <= trigger_ff0;
+			trigger <= trigger_ff1;
+		end if;
+	 end process;
         
     --control state with ep00wrire
     process (ep00wire, clk_100) is
@@ -112,7 +135,7 @@ ram_clk <= clk;
                 state <= idle;
             elsif ep00wire(1 downto 0) = "01" then
                 state <= load;
-            elsif ep00wire(1 downto 0) = "10" then
+            elsif ep00wire(1 downto 0) = "10" and trigger = '1' and trigger_ff1 = '0' then
                 state <= run;
             end if;
         end if;
