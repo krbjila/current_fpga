@@ -12,14 +12,15 @@ entity dac is
 		hi_inout  : inout std_logic_vector(15 downto 0);
 		hi_muxsel : out   std_logic;
 		-- ok peripherals --
-        led : out std_logic_vector(7 downto 0);
+      led : out std_logic_vector(7 downto 0);
 		-- 100 MHz from PLL --
-		clk_100 : in std_logic;	
-        trigger : in std_logic;
-        -- dac --
-        dac_bus : inout std_logic_vector(15 downto 0);
-        dac_cs  : out std_logic_vector(7 downto 0) := (others => '1');
-        ldac    : out std_logic_vector(7 downto 0) := (others => '0')
+		clk_100 : in std_logic;
+		clk_ext : in std_logic;	
+      trigger : in std_logic;
+		-- dac --
+      dac_bus : inout std_logic_vector(15 downto 0);
+      dac_cs  : out std_logic_vector(7 downto 0) := (others => '1');
+      ldac    : out std_logic := '0'
     );
 
     function log2(x: natural) return natural is
@@ -62,15 +63,16 @@ architecture arch of dac is
 
     signal clk     : std_logic;
 
-    signal dac_count   : integer := 0;
+    signal dac_count   : integer range 0 to 7 := 0;
     signal latch_count : integer range 0 to 4 := 0;
     signal sequence_count : integer range 0 to 10000 := 0;
     signal read_logic  : std_logic_vector(47 downto 0) := std_logic_vector(to_unsigned(0, 48));
        
     type int_array is array(0 to 7) of integer;
+	 type int16_array is array(0 to 7) of integer range 0 to 2**16-1;
     signal ticks_til_update : int_array := (others => 5);
     signal step_size        : int_array := (others => 0);
-    signal next_voltage     : int_array := (others => 2**15);
+    signal next_voltage     : int16_array := (others => 2**15);
     signal duration         : int_array := (others => 20);
     type nat_array is array(0 to 7) of natural;
     signal shift_bits       : nat_array := (others => 0);
@@ -143,16 +145,16 @@ state <= idle when ep00wire(1 downto 0) = "00" else
                             dac_count <= 0;
                         end if;
                     elsif latch_count = 2 then
-                        ldac <= (others => '1');
+                        ldac <= '1';
                         latch_count <= latch_count + 1;
                     else
-                        ldac <= (others => '0');
+                        ldac <= '0';
                         latch_count <= 0;
                     end if;
 
                 when others =>
                     dac_cs <= (others => '1');
-                    ldac <= (others => '0');
+                    ldac <= '0';
                     latch_count <= 0;
             end case;
         end if;
