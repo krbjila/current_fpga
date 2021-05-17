@@ -1,5 +1,6 @@
 library IEEE;
 use IEEE.std_logic_1164.all;
+use IEEE.std_logic_misc.all;
 use ieee.numeric_std.all;
 
 use work.FRONTPANEL.all;
@@ -79,6 +80,7 @@ architecture arch of dac is
     signal duration         : int_array := (others => 20);
     type nat_array is array(0 to 7) of natural;
     signal shift_bits       : nat_array := (others => 0);
+	 signal voltage_changed  : std_logic_vector(7 downto 0) := (others => '1');
     
     type voltage_array is array(7 downto 0) of std_logic_vector(15 downto 0);
     signal manual_voltages : voltage_array;
@@ -174,14 +176,17 @@ state <= idle when ep00wire(1 downto 0) = "00" else
 	 end process;
 
     -- we have eight dacs. need a process to write a new voltage to each dac and then update them all at the same time.
-    process(state, clk, latch_count, dac_count) is
+    process(state, clk, latch_count, dac_count, voltage_changed) is
     begin
         if falling_edge(clk) then
             case (state) is
                 when run =>
                     if latch_count = 0 then 
-								--TODO: Don't engage CS if there's no change to the voltage
-                        dac_cs(dac_count) <= '0';
+								if voltage_changed(dac_count) = '1' then
+									dac_cs(dac_count) <= '0';
+								else
+									dac_cs(dac_count) <= '1';
+								end if;
                         latch_count <= latch_count + 1;
 --                        ldac(dac_count) <= '1';
                     elsif latch_count = 1 then
@@ -197,7 +202,9 @@ state <= idle when ep00wire(1 downto 0) = "00" else
 						  elsif latch_count = 2 then
                         latch_count <= latch_count + 1;
 						  elsif latch_count = 3 then
-                        ldac <= '1';
+								if or_reduce(voltage_changed) = '1' then
+									ldac <= '1';
+								end if;
                         latch_count <= latch_count + 1;
                     else
                         ldac <= '0';
@@ -214,14 +221,17 @@ state <= idle when ep00wire(1 downto 0) = "00" else
 
 
     -- control dacbus
-    process (state, clk, dac_count, next_voltage, step_size, ticks_til_update, shift_bits, ep09wire, dac_bus) is
+    process (state, clk, dac_count, next_voltage, step_size, ticks_til_update, shift_bits, ep09wire, dac_bus, voltage_changed) is
     begin
         if falling_edge(clk) then
---            led <= not dac_bus(7 downto 0); --std_logic_vector(to_unsigned(dac, 8));
             if (state = run) and (ep09wire(dac_count) = '0') then
-                dac_bus <= std_logic_vector(to_unsigned(
-                           next_voltage(dac_count) - to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(ticks_til_update(dac_count), 48), shift_bits(dac_count)))
-                           , 16));
+					if voltage_changed(dac_count) = '1' then
+						dac_bus <= std_logic_vector(to_unsigned(
+									  next_voltage(dac_count) - to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(ticks_til_update(dac_count), 48), shift_bits(dac_count)))
+                             , 16));
+					else
+						dac_bus <= dac_bus;
+					end if;
             else 
                 dac_bus <= manual_voltages(dac_count);
             end if;
@@ -231,6 +241,7 @@ state <= idle when ep00wire(1 downto 0) = "00" else
 
     -- control dac_bus
     process(state, clk) is
+	 variable delta_voltage: integer range 0 to 2**16-1 := 0;
     begin
         if falling_edge(clk) then
             case (state) is 
@@ -250,7 +261,13 @@ state <= idle when ep00wire(1 downto 0) = "00" else
                             end if;
                         when 1 => 
                             if ticks_til_update(dac_count) = duration(dac_count) then -- if we just read new values
-                                next_voltage(dac_count) <= next_voltage(dac_count) + to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(duration(dac_count), 48), shift_bits(dac_count)));
+											delta_voltage := to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(duration(dac_count), 48), shift_bits(dac_count)));
+										   next_voltage(dac_count) <= next_voltage(dac_count) + delta_voltage;
+										   if delta_voltage = 0 then
+											   voltage_changed(dac_count) <= '0';
+										    else
+											   voltage_changed(dac_count) <= '1';
+										    end if;
                             end if;
                         when 4 =>
                             ticks_til_update(0) <= ticks_til_update(0) - 1;
