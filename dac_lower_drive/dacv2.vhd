@@ -4,6 +4,9 @@ use ieee.numeric_std.all;
 
 use work.FRONTPANEL.all;
 
+Library UNISIM;
+use UNISIM.vcomponents.all;
+
 entity dac is
 	port (
         -- opal kelly --
@@ -12,7 +15,7 @@ entity dac is
 		hi_inout  : inout std_logic_vector(15 downto 0);
 		hi_muxsel : out   std_logic;
 		-- ok peripherals --
-      led : out std_logic_vector(7 downto 0);
+      led : out std_logic_vector(7 downto 0) := (others => '1');
 		-- 100 MHz from PLL --
 		clk_100 : in std_logic;
 		clk_ext : in std_logic;	
@@ -40,11 +43,11 @@ end dac;
 architecture arch of dac is
     -- opal kelly --
     signal ti_clk   : std_logic; -- 48MHz clk. USB data is sync'd to this.
-	signal ok1      : std_logic_vector(30 downto 0);
-	signal ok2      : std_logic_vector(16 downto 0);
-	signal ok2s     : std_logic_vector(17*2-1 downto 0);
+	 signal ok1      : std_logic_vector(30 downto 0);
+	 signal ok2      : std_logic_vector(16 downto 0);
+	 signal ok2s     : std_logic_vector(17*2-1 downto 0);
     -- ok usb --
-	signal ep00wire  : std_logic_vector(15 downto 0);
+	 signal ep00wire  : std_logic_vector(15 downto 0);
     signal ep01wire  : std_logic_vector(15 downto 0);
     signal ep02wire  : std_logic_vector(15 downto 0);
     signal ep03wire  : std_logic_vector(15 downto 0);
@@ -81,6 +84,7 @@ architecture arch of dac is
     signal manual_voltages : voltage_array;
 
     -- ram --
+	 signal ram_clk_select : std_logic := '0';
     signal ram_clk     : std_logic;
     signal ram_we      : std_logic;
     signal ram_addr    : integer range 0 to 10000 := 0; -- update ram_data_depth too!!
@@ -103,12 +107,10 @@ architecture arch of dac is
 
 begin 
 
-
 hi_muxsel <= '0';
 
-clk <= ti_clk;
-ram_clk <= ti_clk;
-
+--clk <= ti_clk;
+--ram_clk <= ti_clk;
 
 manual_voltages(0) <= ep01wire;
 manual_voltages(1) <= ep02wire;
@@ -123,6 +125,53 @@ state <= idle when ep00wire(1 downto 0) = "00" else
          load when ep00wire(1 downto 0) = "01" else
          run when (ep00wire(1 downto 0) = "10" and trigger = '1') else
          ready;
+			
+	 process(ti_clk) is
+	 variable count: integer range 0 to 3 := 0;
+    begin
+		if falling_edge(ti_clk) then
+			if count < 2 then
+				count := count + 1;
+				clk <= '0';
+			elsif count = 2 then
+				count := count + 1;
+				clk <= '1';
+			else
+				count := 0;
+				clk <= '1';
+			end if;
+		end if;
+	 end process;
+	 
+	 process(ti_clk) is
+    begin
+		if falling_edge(ti_clk) then
+			if state = idle or state = run then
+				ram_clk_select <= '1';
+--				ram_clk_select <= '0';
+			else
+				ram_clk_select <= '0';
+			end if;
+		end if;
+	 end process;
+			
+	 process(state) is
+    begin
+		case state is
+        when idle =>
+            led(0) <= '1';
+				led(1) <= '1';
+        when load =>
+            led(0) <= '0';
+				led(1) <= '1';
+        when ready =>
+            led(0) <= '1';
+				led(1) <= '0';
+		  when run =>
+				led(0) <= '0';
+				led(1) <= '0';
+		end case;
+	 end process;
 
     -- we have eight dacs. need a process to write a new voltage to each dac and then update them all at the same time.
     process(state, clk, latch_count, dac_count) is
@@ -131,6 +180,7 @@ state <= idle when ep00wire(1 downto 0) = "00" else
             case (state) is
                 when run =>
                     if latch_count = 0 then 
+								--TODO: Don't engage CS if there's no change to the voltage
                         dac_cs(dac_count) <= '0';
                         latch_count <= latch_count + 1;
 --                        ldac(dac_count) <= '1';
@@ -144,7 +194,9 @@ state <= idle when ep00wire(1 downto 0) = "00" else
                             latch_count <= latch_count + 1;
                             dac_count <= 0;
                         end if;
-                    elsif latch_count = 2 then
+						  elsif latch_count = 2 then
+                        latch_count <= latch_count + 1;
+						  elsif latch_count = 3 then
                         ldac <= '1';
                         latch_count <= latch_count + 1;
                     else
@@ -165,7 +217,7 @@ state <= idle when ep00wire(1 downto 0) = "00" else
     process (state, clk, dac_count, next_voltage, step_size, ticks_til_update, shift_bits, ep09wire, dac_bus) is
     begin
         if falling_edge(clk) then
-            led <= not dac_bus(7 downto 0); --std_logic_vector(to_unsigned(dac, 8));
+--            led <= not dac_bus(7 downto 0); --std_logic_vector(to_unsigned(dac, 8));
             if (state = run) and (ep09wire(dac_count) = '0') then
                 dac_bus <= std_logic_vector(to_unsigned(
                            next_voltage(dac_count) - to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(ticks_til_update(dac_count), 48), shift_bits(dac_count)))
@@ -200,7 +252,7 @@ state <= idle when ep00wire(1 downto 0) = "00" else
                             if ticks_til_update(dac_count) = duration(dac_count) then -- if we just read new values
                                 next_voltage(dac_count) <= next_voltage(dac_count) + to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(duration(dac_count), 48), shift_bits(dac_count)));
                             end if;
-                        when 3 =>
+                        when 4 =>
                             ticks_til_update(0) <= ticks_til_update(0) - 1;
                             ticks_til_update(1) <= ticks_til_update(1) - 1;
                             ticks_til_update(2) <= ticks_til_update(2) - 1;
@@ -224,9 +276,9 @@ state <= idle when ep00wire(1 downto 0) = "00" else
 
 
     --control ram_data_i, ram_we
-    process (clk, state, ep80write, ep80pipe) is
+    process (ram_clk, state, ep80write, ep80pipe) is
     begin
-        if falling_edge(clk) then
+        if falling_edge(ram_clk) then
             case (state) is
                 when load => --load data from ep80pipe (USB) into ram
                     if ep80write = '1' then 
@@ -241,9 +293,9 @@ state <= idle when ep00wire(1 downto 0) = "00" else
     end process;
 
     --control ram_addr
-    process(clk, state, ep80write)
+    process(ram_clk, state, ep80write)
     begin 
-        if rising_edge(clk) then
+        if rising_edge(ram_clk) then
             case state is
                 when load =>
                     if ep80write = '1' then
@@ -267,6 +319,17 @@ port map(
     address => ram_addr,
     we => ram_we,
     data_o => ram_data_o
+);
+
+BUFGMUX_inst : BUFGMUX
+generic map (
+	CLK_SEL_TYPE => "SYNC"  -- Glitchles ("SYNC") or fast ("ASYNC") clock switch-over
+)
+port map (
+	O => ram_clk,   -- 1-bit output: Clock buffer output
+	I0 => ti_clk, -- 1-bit input: Clock buffer input (S=0)
+	I1 => clk, -- 1-bit input: Clock buffer input (S=1)
+	S => ram_clk_select    -- 1-bit input: Clock buffer select
 );
 
 -- Instantiate the okHost and connect endpoints
