@@ -3,11 +3,14 @@ import numpy as np
 import json
 
 from twisted.internet.defer import inlineCallbacks, returnValue
+from time import sleep
 
 VOLTAGE_RANGE = (-10., 10.)
 DAC_BITS = 16
 N_CHANNELS = 8
-CLK = 48e6 / (8.*2. + 2.)
+# CLK = 0.25 * 48e6 / (8.*2. + 2. + 1.)
+CLK = 0.25 * 10e6 / (8.*2. + 2. + 1.)
+# CLK = 48e6 / (8.*2. + 2.)
 
 mode_ints = {'idle': 0, 'load': 1, 'run': 2}
 mode_wire = 0x00
@@ -16,7 +19,9 @@ channel_mode_wire = 0x09
 manual_voltage_wires = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
 
 
-bitfile = "dac.bit"
+# bitfile = "dac.bit"
+bitfile = "C:\Users\Ye Lab\Desktop\Cal\current_fpga\dac_lower_drive\dac.bit"
+# bitfile = "blinky2.bit"
 
 def time_to_ticks(clk, time):
     return max(int(abs(clk*time)), 1)
@@ -49,15 +54,15 @@ def make_sequence_bytes(ramps):
         T = 0
         V = 0
         for r in ramps[c]:
-            r['dt'] = time_to_ticks(CLK, r['dt'])
-            unsorted_ramps.append((T, c, r))
-            T += r['dt']
-            T += r['dv']
-        unsorted_ramps.append((T, c, {'dt': time_to_ticks(CLK, 10e-3), 'dv': -V}))
-        unsorted_ramps.append((T+10e-3, c, {'dt': time_to_ticks(CLK, 10), 'dv': 0}))
+            r2 = {'dv': r['dv']}
+            r2['dt'] = time_to_ticks(CLK, r['dt'])
+            unsorted_ramps.append((T, c, r2))
+            T += r2['dt']
+            V += r2['dv']
+        unsorted_ramps.append((T, c, {'dt': time_to_ticks(CLK, 0.1), 'dv': -V}))
+        unsorted_ramps.append((T+10E-3, c, {'dt': time_to_ticks(CLK, 10), 'dv': 0}))
 
-
-    # order ramps by when the happen, then physical location on board
+    # order ramps by when they happen, then physical location on board
     sorted_ramps = sorted(unsorted_ramps)
     
     # ints to bytes
@@ -74,14 +79,17 @@ def make_sequence_bytes(ramps):
 
 def set_mode(mode):
     mode_int = mode_ints[mode]
-    yield fp.SetWireInValue(mode_wire, mode_int)
-    yield fp.UpdateWireIns()
+    fp.SetWireInValue(mode_wire, mode_int)
+    sleep(0.1)
+    fp.UpdateWireIns()
+    sleep(0.1)
 
 def program_sequence(sequence):
     byte_array = make_sequence_bytes(sequence)
     set_mode('idle')
     set_mode('load')
     fp.WriteToPipeIn(sequence_pipe, bytearray(byte_array))
+    sleep(0.1)
     set_mode('idle')
 
 def start_sequence():
@@ -98,7 +106,7 @@ if __name__ == "__main__":
         fp.OpenBySerial(ser)
         id = fp.GetDeviceID()
         print("Checking {}".format(id))
-        if "KRbtest1" in id:
+        if "KRbtest" in id:
             print("Connecting to {}".format(id))
             device_found = True
             break
@@ -107,19 +115,20 @@ if __name__ == "__main__":
         print("Bitfile loaded!")
 
         ramps = [
-            [{'dv':1, 'dt':1}, {'dv':0, 'dt':3}],
-            [{'dv':1, 'dt':1}],
-            [{'dv':1, 'dt':1}],
-            [{'dv':1, 'dt':1}],
-            [{'dv':1, 'dt':1}],
-            [{'dv':1, 'dt':1}],
-            [{'dv':1, 'dt':1}],
-            [{'dv':1, 'dt':1}]
+            [{'dv':-10.0, 'dt':0.001}, {'dv':20.0, 'dt':0.001}, {'dv':-10.0, 'dt':0.001}]*50,
+            [{'dv':0.0, 'dt':0.001}, {'dv':-0.0, 'dt':0.001}, {'dv':0.0, 'dt':0.001}]*50,
+            [{'dv':-10.0, 'dt':0.001}, {'dv':20.0, 'dt':0.001}, {'dv':-10.0, 'dt':0.001}]*50,
+            [{'dv':10.0, 'dt':0.001}, {'dv':-20.0, 'dt':0.001}, {'dv':10.0, 'dt':0.001}]*50,
+            [{'dv':-10.0, 'dt':0.001}, {'dv':20.0, 'dt':0.001}, {'dv':-10.0, 'dt':0.001}]*50,
+            [{'dv':10.0, 'dt':0.001}, {'dv':-20.0, 'dt':0.001}, {'dv':10.0, 'dt':0.001}]*50,
+            [{'dv':-10.0, 'dt':0.001}, {'dv':20.0, 'dt':0.001}, {'dv':-10.0, 'dt':0.001}]*50,
+            [{'dv':10.0, 'dt':0.001}, {'dv':-20.0, 'dt':0.001}, {'dv':10.0, 'dt':0.001}]*50
         ]
 
         print("Programming sequence")
         program_sequence(ramps)
+        sleep(1)
         print("Running sequence")
         start_sequence()
         print("Done!")
-        
+        fp.Close()

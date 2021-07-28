@@ -9,22 +9,22 @@ Library UNISIM;
 use UNISIM.vcomponents.all;
 
 entity dac is
-	port (
+    port (
         -- opal kelly --
-		hi_in     : in    std_logic_vector(7 downto 0);
-		hi_out    : out   std_logic_vector(1 downto 0);
-		hi_inout  : inout std_logic_vector(15 downto 0);
-		hi_muxsel : out   std_logic;
-		-- ok peripherals --
-      led : out std_logic_vector(7 downto 0) := (others => '1');
-		-- 100 MHz from PLL --
-		clk_100 : in std_logic;
-		clk_ext : in std_logic;	
-      trigger : in std_logic;
-		-- dac --
-      dac_bus : inout std_logic_vector(15 downto 0);
-      dac_cs  : out std_logic_vector(7 downto 0) := (others => '1');
-      ldac    : out std_logic := '0'
+        hi_in     : in    std_logic_vector(7 downto 0);
+        hi_out    : out   std_logic_vector(1 downto 0);
+        hi_inout  : inout std_logic_vector(15 downto 0);
+        hi_muxsel : out   std_logic;
+        -- ok peripherals --
+        led : out std_logic_vector(7 downto 0) := (others => '1');
+        -- 100 MHz from PLL --
+        clk_100 : in std_logic;
+        clk_ext : in std_logic;    
+        trigger : in std_logic;
+        -- dac --
+        dac_bus : inout std_logic_vector(15 downto 0);
+        dac_cs  : out std_logic_vector(7 downto 0) := (others => '1');
+        ldac    : out std_logic := '0'
     );
 
     function log2(x: natural) return natural is
@@ -44,11 +44,11 @@ end dac;
 architecture arch of dac is
     -- opal kelly --
     signal ti_clk   : std_logic; -- 48MHz clk. USB data is sync'd to this.
-	 signal ok1      : std_logic_vector(30 downto 0);
-	 signal ok2      : std_logic_vector(16 downto 0);
-	 signal ok2s     : std_logic_vector(17*2-1 downto 0);
+    signal ok1      : std_logic_vector(30 downto 0);
+    signal ok2      : std_logic_vector(16 downto 0);
+    signal ok2s     : std_logic_vector(17*2-1 downto 0);
     -- ok usb --
-	 signal ep00wire  : std_logic_vector(15 downto 0);
+    signal ep00wire  : std_logic_vector(15 downto 0);
     signal ep01wire  : std_logic_vector(15 downto 0);
     signal ep02wire  : std_logic_vector(15 downto 0);
     signal ep03wire  : std_logic_vector(15 downto 0);
@@ -58,38 +58,42 @@ architecture arch of dac is
     signal ep07wire  : std_logic_vector(15 downto 0);
     signal ep08wire  : std_logic_vector(15 downto 0);
     signal ep09wire  : std_logic_vector(15 downto 0);
-	signal ep20wire  : std_logic_vector(15 downto 0);
+    signal ep20wire  : std_logic_vector(15 downto 0);
     signal ep80pipe  : std_logic_vector(15 downto 0); 
     signal ep80write : std_logic; -- hi during communication
 
-    type state_type is (idle, load, run, ready);
-    signal state : state_type := idle;
+    type ok_state_type is (idle, load, run);
+    signal ok_state : ok_state_type := idle;
 
-    signal clk     : std_logic;
+    type trig_state_type is (idle, run);
+    signal trig_state : trig_state_type := idle;
+    
+    -- clock --
+    signal clk            : std_logic; -- derived from external clock, clocks DACs when running
 
-    signal dac_count   : integer range 0 to 7 := 0;
-    signal latch_count : integer range 0 to 4 := 0;
-    signal sequence_count : integer range 0 to 10000 := 0;
-    signal read_logic  : std_logic_vector(47 downto 0) := std_logic_vector(to_unsigned(0, 48));
+    signal dac_count      : integer range 0 to 7 := 0;
+    signal latch_count    : integer range 0 to 4 := 0;
+    signal sequence_count : integer range 0 to 16384 := 0;
+    signal read_logic     : std_logic_vector(47 downto 0) := std_logic_vector(to_unsigned(0, 48));
        
     type int_array is array(0 to 7) of integer;
-	 type int16_array is array(0 to 7) of integer range 0 to 2**16-1;
+    type int16_array is array(0 to 7) of integer range 0 to 2**16-1;
     signal ticks_til_update : int_array := (others => 5);
     signal step_size        : int_array := (others => 0);
     signal next_voltage     : int16_array := (others => 2**15);
     signal duration         : int_array := (others => 20);
     type nat_array is array(0 to 7) of natural;
     signal shift_bits       : nat_array := (others => 0);
-	 signal voltage_changed  : std_logic_vector(7 downto 0) := (others => '1');
+    signal voltage_changed  : std_logic_vector(7 downto 0) := (others => '1');
     
     type voltage_array is array(7 downto 0) of std_logic_vector(15 downto 0);
     signal manual_voltages : voltage_array;
 
     -- ram --
-	 signal ram_clk_select : std_logic := '0';
+    signal ram_clk_select : std_logic := '0';
     signal ram_clk     : std_logic;
     signal ram_we      : std_logic;
-    signal ram_addr    : integer range 0 to 10000 := 0; -- update ram_data_depth too!!
+    signal ram_addr    : integer range 0 to 16384 := 0; -- update ram_data_depth too!!
     signal ram_data_i  : std_logic_vector(15 downto 0);
     signal ram_data_o  : std_logic_vector(47 downto 0);
 
@@ -108,130 +112,157 @@ architecture arch of dac is
     end component;
 
 begin 
+    
+    ep20wire <= (others => '0');
 
-hi_muxsel <= '0';
+    hi_muxsel <= '0';
 
---clk <= ti_clk;
---ram_clk <= ti_clk;
+    manual_voltages(0) <= ep01wire;
+    manual_voltages(1) <= ep02wire;
+    manual_voltages(2) <= ep03wire;
+    manual_voltages(3) <= ep04wire;
+    manual_voltages(4) <= ep05wire;
+    manual_voltages(5) <= ep06wire;
+    manual_voltages(6) <= ep07wire;
+    manual_voltages(7) <= ep08wire;
 
-manual_voltages(0) <= ep01wire;
-manual_voltages(1) <= ep02wire;
-manual_voltages(2) <= ep03wire;
-manual_voltages(3) <= ep04wire;
-manual_voltages(4) <= ep05wire;
-manual_voltages(5) <= ep06wire;
-manual_voltages(6) <= ep07wire;
-manual_voltages(7) <= ep08wire;
-
-state <= idle when ep00wire(1 downto 0) = "00" else
-         load when ep00wire(1 downto 0) = "01" else
-         run when (ep00wire(1 downto 0) = "10" and trigger = '1') else
-         ready;
-			
-	 process(ti_clk) is
-	 variable count: integer range 0 to 3 := 0;
+    -- Update PLL-clocked state machine based on wires
+    process(ti_clk) is
     begin
-		if falling_edge(ti_clk) then
-			if count < 2 then
-				count := count + 1;
-				clk <= '0';
-			elsif count = 2 then
-				count := count + 1;
-				clk <= '1';
-			else
-				count := 0;
-				clk <= '1';
-			end if;
-		end if;
-	 end process;
-	 
-	 process(ti_clk) is
-    begin
-		if falling_edge(ti_clk) then
-			if state = idle or state = run then
-				ram_clk_select <= '1';
---				ram_clk_select <= '0';
-			else
-				ram_clk_select <= '0';
-			end if;
-		end if;
-	 end process;
-			
-	 process(state) is
-    begin
-		case state is
-        when idle =>
-            led(0) <= '1';
-				led(1) <= '1';
-        when load =>
-            led(0) <= '0';
-				led(1) <= '1';
-        when ready =>
-            led(0) <= '1';
-				led(1) <= '0';
-		  when run =>
-				led(0) <= '0';
-				led(1) <= '0';
-		end case;
-	 end process;
+        if falling_edge(ti_clk) then
+            case ep00wire(1 downto 0) is
+            when "00" =>
+                ok_state <= idle;
+            when "01" =>
+                ok_state <= load;
+            when others =>
+                ok_state <= run;
+            end case;
+        end if;
+    end process;
 
-    -- we have eight dacs. need a process to write a new voltage to each dac and then update them all at the same time.
-    process(state, clk, latch_count, dac_count, voltage_changed) is
+    -- Update external clocked state machine
+    process(clk, ok_state, trig_state, trigger) is
     begin
         if falling_edge(clk) then
-            case (state) is
-                when run =>
-                    if latch_count = 0 then 
-								if voltage_changed(dac_count) = '1' then
-									dac_cs(dac_count) <= '0';
-								else
-									dac_cs(dac_count) <= '1';
-								end if;
-                        latch_count <= latch_count + 1;
---                        ldac(dac_count) <= '1';
-                    elsif latch_count = 1 then
-                        dac_cs(dac_count) <= '1';
- --                       ldac(dac_count) <= '0';
-                        if dac_count < 7 then
-                            dac_count <= dac_count + 1;
-                            latch_count <= 0;
-                        else 
-                            latch_count <= latch_count + 1;
-                            dac_count <= 0;
-                        end if;
-						  elsif latch_count = 2 then
-                        latch_count <= latch_count + 1;
-						  elsif latch_count = 3 then
-								if or_reduce(voltage_changed) = '1' then
-									ldac <= '1';
-								end if;
-                        latch_count <= latch_count + 1;
-                    else
-                        ldac <= '0';
-                        latch_count <= 0;
-                    end if;
+            if (ok_state = run) then
+                if (trig_state = idle) and (trigger = '0') then
+                    trig_state <= idle; 
+                else
+                    trig_state <= run;
+                end if;
+            else
+                trig_state <= idle;
+            end if;
+        end if;
+    end process;
+    
+    -- Divide external clock by 4
+    process(clk_ext) is
+    variable count: integer range 0 to 3 := 0;
+    begin
+        if falling_edge(clk_ext) then
+            if count < 2 then
+                count := count + 1;
+                clk <= '0';
+            elsif count = 2 then
+                count := count + 1;
+                clk <= '1';
+            else
+                count := 0;
+                clk <= '1';
+            end if;
+        end if;
+    end process;
+    
+    -- Clock the RAM with the PLL's 48 MHz clock when loading, external clock otherwise.
+    process(ti_clk) is
+    begin
+        if falling_edge(ti_clk) then
+            if ok_state = run then
+                ram_clk_select <= '1';
+            else
+                ram_clk_select <= '0';
+            end if;
+        end if;
+    end process;
+            
+    process(trig_state, ok_state) is
+    begin
+        case ok_state is
+        when idle =>
+            led(0) <= '1';
+            led(1) <= '0';
+        when load =>
+            led(0) <= '0';
+            led(1) <= '1';
+        when run =>
+            led(0) <= '0';
+            led(1) <= '0';
+        end case;
+        case trig_state is
+        when idle =>
+            led(2) <= '1';
+        when run =>
+            led(2) <= '0';
+        end case;
+        led(7 downto 3) <= (others => '1');
+    end process;
 
-                when others =>
-                    dac_cs <= (others => '1');
+    -- we have eight dacs. need a process to write a new voltage to each dac and then update them all at the same time.
+    process(trig_state, clk, latch_count, dac_count, voltage_changed) is
+    begin
+        if falling_edge(clk) then
+            case (trig_state) is
+            when run =>
+                if latch_count = 0 then 
+                            if voltage_changed(dac_count) = '1' then
+                                dac_cs(dac_count) <= '0';
+                            else
+                                dac_cs(dac_count) <= '1';
+                            end if;
+                    latch_count <= latch_count + 1;
+                elsif latch_count = 1 then
+                    dac_cs(dac_count) <= '1';
+                    if dac_count < 7 then
+                        dac_count <= dac_count + 1;
+                        latch_count <= 0;
+                    else 
+                        latch_count <= latch_count + 1;
+                        dac_count <= 0;
+                    end if;
+                        elsif latch_count = 2 then
+                    latch_count <= latch_count + 1;
+                        elsif latch_count = 3 then
+                            if or_reduce(voltage_changed) = '1' then
+                                ldac <= '1';
+                            end if;
+                    latch_count <= latch_count + 1;
+                else
                     ldac <= '0';
                     latch_count <= 0;
+                end if;
+            when others =>
+                dac_cs <= (others => '1');
+                ldac <= '0';
+                latch_count <= 0;
             end case;
         end if;
     end process;
 
 
     -- control dacbus
-    process (state, clk, dac_count, next_voltage, step_size, ticks_til_update, shift_bits, ep09wire, dac_bus, voltage_changed) is
+    process (trig_state, clk, dac_count, next_voltage, step_size, ticks_til_update, shift_bits, ep09wire, dac_bus, voltage_changed) is
     begin
         if falling_edge(clk) then
-            if (state = run) and (ep09wire(dac_count) = '0') then
-					if voltage_changed(dac_count) = '1' then
-						dac_bus <= std_logic_vector(to_unsigned(
-									  next_voltage(dac_count) - to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(ticks_til_update(dac_count), 48), shift_bits(dac_count)))
+            if (trig_state = run) and (ep09wire(dac_count) = '0') then
+                    if voltage_changed(dac_count) = '1' then
+                        dac_bus <= std_logic_vector(to_unsigned(
+                                      next_voltage(dac_count) - to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(ticks_til_update(dac_count), 48), shift_bits(dac_count)))
                              , 16));
-					else
-						dac_bus <= dac_bus;
-					end if;
+                    else
+                        dac_bus <= dac_bus;
+                    end if;
             else 
                 dac_bus <= manual_voltages(dac_count);
             end if;
@@ -240,11 +271,11 @@ state <= idle when ep00wire(1 downto 0) = "00" else
    
 
     -- control dac_bus
-    process(state, clk) is
-	 variable delta_voltage: integer range 0 to 2**16-1 := 0;
+    process(trig_state, clk) is
+    variable delta_voltage: integer range 0 to 2**16-1 := 0;
     begin
         if falling_edge(clk) then
-            case (state) is 
+            case (trig_state) is 
                 when run =>
                     case latch_count is
                         when 0 =>
@@ -261,13 +292,13 @@ state <= idle when ep00wire(1 downto 0) = "00" else
                             end if;
                         when 1 => 
                             if ticks_til_update(dac_count) = duration(dac_count) then -- if we just read new values
-											delta_voltage := to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(duration(dac_count), 48), shift_bits(dac_count)));
-										   next_voltage(dac_count) <= next_voltage(dac_count) + delta_voltage;
-										   if delta_voltage = 0 then
-											   voltage_changed(dac_count) <= '0';
-										    else
-											   voltage_changed(dac_count) <= '1';
-										    end if;
+                                            delta_voltage := to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(duration(dac_count), 48), shift_bits(dac_count)));
+                                           next_voltage(dac_count) <= next_voltage(dac_count) + delta_voltage;
+                                           if delta_voltage = 0 then
+                                               voltage_changed(dac_count) <= '0';
+                                            else
+                                               voltage_changed(dac_count) <= '1';
+                                            end if;
                             end if;
                         when 4 =>
                             ticks_til_update(0) <= ticks_til_update(0) - 1;
@@ -293,27 +324,27 @@ state <= idle when ep00wire(1 downto 0) = "00" else
 
 
     --control ram_data_i, ram_we
-    process (ram_clk, state, ep80write, ep80pipe) is
+    process (ram_clk, ok_state, ep80write, ep80pipe) is
     begin
         if falling_edge(ram_clk) then
-            case (state) is
-                when load => --load data from ep80pipe (USB) into ram
-                    if ep80write = '1' then 
-                        ram_we <= '1'; -- ep80wire goes hi for 1 ti_clk cycle if ep80pipe has been updated.
-                    else 
-                        ram_we <= '0';
-                    end if;
-                    ram_data_i <= ep80pipe(15 downto 0);
-                when others => null;
+            case (ok_state) is
+            when load => --load data from ep80pipe (USB) into ram
+                if ep80write = '1' then 
+                    ram_we <= '1'; -- ep80wire goes hi for 1 ti_clk cycle if ep80pipe has been updated.
+                else 
+                    ram_we <= '0';
+                end if;
+                ram_data_i <= ep80pipe(15 downto 0);
+            when others => null;
             end case;
         end if;
     end process;
 
     --control ram_addr
-    process(ram_clk, state, ep80write)
+    process(ram_clk, ok_state, ep80write, sequence_count)
     begin 
         if rising_edge(ram_clk) then
-            case state is
+            case ok_state is
                 when load =>
                     if ep80write = '1' then
                         ram_addr <= ram_addr + 1;
@@ -328,7 +359,7 @@ state <= idle when ep00wire(1 downto 0) = "00" else
 
 ram_block : ram
 generic map(
-    data_depth => 10000, --update ram_addr too!
+    data_depth => 16384, --update ram_addr too!
     data_width => 16)
 port map(
     clock => ram_clk,
@@ -338,15 +369,15 @@ port map(
     data_o => ram_data_o
 );
 
-BUFGMUX_inst : BUFGMUX
+BUFGMUX_clk : BUFGMUX
 generic map (
-	CLK_SEL_TYPE => "SYNC"  -- Glitchles ("SYNC") or fast ("ASYNC") clock switch-over
+    CLK_SEL_TYPE => "SYNC"  -- Glitchles ("SYNC") or fast ("ASYNC") clock switch-over
 )
 port map (
-	O => ram_clk,   -- 1-bit output: Clock buffer output
-	I0 => ti_clk, -- 1-bit input: Clock buffer input (S=0)
-	I1 => clk, -- 1-bit input: Clock buffer input (S=1)
-	S => ram_clk_select    -- 1-bit input: Clock buffer select
+    O => ram_clk,   -- 1-bit output: Clock buffer output
+    I0 => ti_clk, -- 1-bit input: Clock buffer input (S=0)
+    I1 => clk, -- 1-bit input: Clock buffer input (S=1)
+    S => ram_clk_select    -- 1-bit input: Clock buffer select
 );
 
 -- Instantiate the okHost and connect endpoints
