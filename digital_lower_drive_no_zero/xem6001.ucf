@@ -92,8 +92,11 @@ NET "clk_100"      LOC="T8"  | IOSTANDARD="LVCMOS33";
 # Line trigger in
 NET "line_trigger_in"	LOC="C8" | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;
 
+# Clock in
+NET "clk_in"	LOC="A9" | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;
+
 # Port JP2 (ybus) ##########################################################
-#NET "yclk_100"     LOC="J4"  | IOSTANDARD="LVCMOS33";
+#NET "yclk_100"      LOC="J4"  | IOSTANDARD="LVCMOS33";
 NET "logic_out<0>"   LOC="R2"  | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;
 NET "logic_out<1>"   LOC="R1"  | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;
 NET "logic_out<2>"   LOC="P2"  | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;

@@ -53,6 +53,8 @@ architecture arch of sequencer is
     signal clk     : std_logic;
     signal slo_clk : std_logic;
     signal clk_50  : std_logic := '0';
+
+    signal clk_sel : std_logic;
     
     -- ram --
     signal ram_clk     : std_logic;
@@ -78,9 +80,19 @@ architecture arch of sequencer is
 begin
 
 hi_muxsel <= '0'; -- ok says so...
-clk <= ti_clk when (state = load) else
-       clk_50; -- 100MHz clock causes channels 56-63 to be glitchy
+clk_sel <= '0' when (state = load) else '1'; -- 100MHz clock causes channels 56-63 to be glitchy
 ram_clk <= clk;
+
+BUFGMUX_clk : BUFGMUX
+generic map (
+    CLK_SEL_TYPE => "SYNC"  -- Glitchles ("SYNC") or fast ("ASYNC") clock switch-over
+)
+port map (
+    O => clk,   -- 1-bit output: Clock buffer output
+    I0 => ti_clk, -- 1-bit input: Clock buffer input (S=0)
+    I1 => ext_clk, -- 1-bit input: Clock buffer input (S=1)
+    S => clk_sel    -- 1-bit input: Clock buffer select
+);
 
 --led(7) <= slo_clk;
 

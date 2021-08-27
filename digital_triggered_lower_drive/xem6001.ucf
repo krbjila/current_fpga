@@ -71,6 +71,9 @@ NET "clk_100"      LOC="T8"  | IOSTANDARD="LVCMOS33";
 ## Expansion Connectors                                                         
 ############################################################################
 
+# Clock in
+NET "clk_in"	LOC="A9" | IOSTANDARD="LVCMOS33" | DRIVE=8 | SLEW=FAST;
+
 # Port JP1 (zbus) ##########################################################
 #NET "zclk_100"     LOC="B10" | IOSTANDARD="LVCMOS33";
 #NET "zclk2"     LOC="A10" | IOSTANDARD="LVCMOS33";

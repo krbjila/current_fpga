@@ -16,6 +16,8 @@ entity sequencer is
         led    : out   std_logic_vector(7 downto 0);
 		-- 100 MHz from PLL --
 		clk_100 : in std_logic;	
+        -- external clock --
+        clk_in : in std_logic;
         -- sequence out --
         logic_out : inout std_logic_vector(63 downto 0) := (others => '0');
         -- line trigger in --
@@ -101,7 +103,7 @@ generic map (
 port map (
     O => clk,   -- 1-bit output: Clock buffer output
     I0 => ti_clk, -- 1-bit input: Clock buffer input (S=0)
-    I1 => clk_50, -- 1-bit input: Clock buffer input (S=1)
+    I1 => ext_clk, -- 1-bit input: Clock buffer input (S=1)
     S => clk_sel    -- 1-bit input: Clock buffer select
 );
 --led(7) <= slo_clk;
