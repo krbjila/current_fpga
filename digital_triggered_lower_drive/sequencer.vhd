@@ -158,23 +158,23 @@ state <= idle when ep00wire(1 downto 0) = "00" else
                     ticks_til_update <= 10; 
 --                    sequence_logic <= conv_std_logic_vector(0, 63);
                     sequence_count <= 0;
-					when (run) =>
-						sequence_logic <= read_logic(62 downto 0);
-						  if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
-								if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
-									null;
-								else -- update outputs and ticks til next update
-									 ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
-									 sequence_count <= sequence_count+1;
-								end if;
-						  else  -- tick
-								ticks_til_update <= ticks_til_update - 1;
-								if ticks_til_update < 6 then -- need to read from ram
-									 read_logic((ticks_til_update+1)*16-1 downto (ticks_til_update)*16) := ram_data_o;
-								end if;
-								sequence_logic <= sequence_logic;
-								sequence_count <= sequence_count;
-						  end if;
+                when (run) =>
+                    sequence_logic <= read_logic(62 downto 0);
+                        if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
+                            if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
+                                null;
+                            else -- update outputs and ticks til next update
+                                    ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
+                                    sequence_count <= sequence_count+1;
+                            end if;
+                        else  -- tick
+                            ticks_til_update <= ticks_til_update - 1;
+                            if ticks_til_update < 6 then -- need to read from ram
+                                    read_logic((ticks_til_update+1)*16-1 downto (ticks_til_update)*16) := ram_data_o;
+                            end if;
+                            sequence_logic <= sequence_logic;
+                            sequence_count <= sequence_count;
+                        end if;
                 when others => null;
             end case;
         end if;
