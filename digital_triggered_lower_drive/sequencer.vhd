@@ -155,7 +155,7 @@ state <= idle when ep00wire(1 downto 0) = "00" else
             --- led(7 downto 0) <= not sequence_logic(62 downto 56);
             case(state) is
                 when (idle) => -- get ready to run, output defaults
-                    ticks_til_update <= 10; 
+                    ticks_til_update <= 10; -- Note: this introduces a timing offset of 200 ns. Empirically, we measure 300 ns delay
                     -- sequence_logic <= conv_std_logic_vector(0, 63);
                     sequence_count <= 0;
                 when (run) =>
