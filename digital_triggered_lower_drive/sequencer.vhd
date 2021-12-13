@@ -6,31 +6,31 @@ use IEEE.std_logic_unsigned.all;
 use work.FRONTPANEL.all;
 
 entity sequencer is
-	port (
+    port (
         -- opal kelly --
-		hi_in     : in    std_logic_vector(7 downto 0);
-		hi_out    : out   std_logic_vector(1 downto 0);
-		hi_inout  : inout std_logic_vector(15 downto 0);
-		hi_muxsel : out   std_logic;
-		-- ok peripherals --
-      --- led    : out   std_logic_vector(7 downto 0);
-		-- 100 MHz from PLL --
-		clk_100 : in std_logic;	
+        hi_in     : in    std_logic_vector(7 downto 0);
+        hi_out    : out   std_logic_vector(1 downto 0);
+        hi_inout  : inout std_logic_vector(15 downto 0);
+        hi_muxsel : out   std_logic;
+        -- ok peripherals --
+        --- led    : out   std_logic_vector(7 downto 0);
+        -- 100 MHz from PLL --
+        clk_100 : in std_logic;	
         -- sequence out --
         logic_out : inout std_logic_vector(62 downto 0) := (others => '0');
-		  --- trigger ---
-		  trigger	: in	std_logic
-	);
+        --- trigger ---
+        trigger	: in	std_logic
+    );
 end sequencer;
 
 architecture arch of sequencer is
     -- opal kelly --
     signal ti_clk   : std_logic; -- 48MHz clk. USB data is sync'd to this.
-	signal ok1      : std_logic_vector(30 downto 0);
-	signal ok2      : std_logic_vector(16 downto 0);
-	signal ok2s     : std_logic_vector(17*2-1 downto 0);
+    signal ok1      : std_logic_vector(30 downto 0);
+    signal ok2      : std_logic_vector(16 downto 0);
+    signal ok2s     : std_logic_vector(17*2-1 downto 0);
     -- ok usb --
-	signal ep00wire : std_logic_vector(15 downto 0);
+    signal ep00wire : std_logic_vector(15 downto 0);
     signal ep01wire : std_logic_vector(15 downto 0);
     signal ep02wire : std_logic_vector(15 downto 0);
     signal ep03wire : std_logic_vector(15 downto 0);
@@ -39,13 +39,13 @@ architecture arch of sequencer is
     signal ep06wire : std_logic_vector(15 downto 0);
     signal ep07wire : std_logic_vector(15 downto 0);
     signal ep08wire : std_logic_vector(15 downto 0);
-	signal ep20wire : std_logic_vector(15 downto 0);
+    signal ep20wire : std_logic_vector(15 downto 0);
     signal ep80pipe  : std_logic_vector(15 downto 0); 
     signal ep80write : std_logic; -- hi during communication
    
     type state_type is (idle, load, run, ready); --global state types
     signal state : state_type := idle; --global state
-	     
+         
     signal ticks_til_update : integer := 10;
     signal sequence_count   : integer range 0 to 1000 := 0;
     signal sequence_logic   : std_logic_vector(62 downto 0) := (others => '0') ;
@@ -111,7 +111,7 @@ state <= idle when ep00wire(1 downto 0) = "00" else
             clk_50 <= not clk_50;
         end if;
     end process;
-    	
+        
 --		--- control state with ep00wrire
 --    process (ep00wire, clk_100, trigger) is
 --    begin
@@ -149,32 +149,32 @@ state <= idle when ep00wire(1 downto 0) = "00" else
     -- Having trigger in process is causing it to trigger on the falling edge, which is unstable (and offset) from the rising edge. Can we put a "if trigger = '0' then break" command? ldm
     process(clk, state, ram_data_o, trigger) is
         variable read_logic : std_logic_vector(95 downto 0) := conv_std_logic_vector(0, 96); -- holds data read from ram.
-	 begin
-		if falling_edge(clk) then
-				--- following line not necessary...
-				--- led(7 downto 0) <= not sequence_logic(62 downto 56);
+     begin
+        if falling_edge(clk) then
+            --- following line not necessary...
+            --- led(7 downto 0) <= not sequence_logic(62 downto 56);
             case(state) is
                 when (idle) => -- get ready to run, output defaults
                     ticks_til_update <= 10; 
---                    sequence_logic <= conv_std_logic_vector(0, 63);
+                    -- sequence_logic <= conv_std_logic_vector(0, 63);
                     sequence_count <= 0;
-					when (run) =>
-						sequence_logic <= read_logic(62 downto 0);
-						  if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
-								if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
-									null;
-								else -- update outputs and ticks til next update
-									 ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
-									 sequence_count <= sequence_count+1;
-								end if;
-						  else  -- tick
-								ticks_til_update <= ticks_til_update - 1;
-								if ticks_til_update < 6 then -- need to read from ram
-									 read_logic((ticks_til_update+1)*16-1 downto (ticks_til_update)*16) := ram_data_o;
-								end if;
-								sequence_logic <= sequence_logic;
-								sequence_count <= sequence_count;
-						  end if;
+                when (run) =>
+                    if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
+                        sequence_logic <= read_logic(62 downto 0);
+                        if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
+                            null;
+                        else -- update outputs and ticks til next update
+                                ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
+                                sequence_count <= sequence_count+1;
+                        end if;
+                    else  -- tick
+                        ticks_til_update <= ticks_til_update - 1;
+                        if ticks_til_update < 6 then -- need to read from ram
+                                read_logic((ticks_til_update+1)*16-1 downto (ticks_til_update)*16) := ram_data_o;
+                        end if;
+                        sequence_logic <= sequence_logic;
+                        sequence_count <= sequence_count;
+                    end if;
                 when others => null;
             end case;
         end if;
