@@ -164,21 +164,18 @@ ram_clk <= clk;
     begin
         if falling_edge(clk) then
             led(7 downto 0) <= not sequence_logic(63 downto 56);
+            sequence_logic <= sequence_logic;
+
             case(state) is
-                when idle => -- get ready to run
-                    ticks_til_update <= 100; 
---                    sequence_logic <= conv_std_logic_vector(0, 64);
-                    sequence_logic(63) <= '1'; -- Ensure D15 experiment trigger is low (inverted)
-                    sequence_count <= 0;
                 when run => 
                     if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
-                        sequence_logic <= read_logic(63 downto 0);
                         if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
                             -- DON'T restart sequence!
                             sequence_count <= sequence_count;
                             sequence_logic(63) <= '1'; -- Ensure D15 experiment trigger is low (inverted)
                             ticks_til_update <= 10;
                         else -- update outputs and ticks til next update
+                            sequence_logic <= read_logic(63 downto 0);
                             ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
                             sequence_count <= sequence_count+1;
                         end if;
@@ -187,10 +184,12 @@ ram_clk <= clk;
                         if ticks_til_update < 6 then -- need to read from ram
                             read_logic((ticks_til_update+1)*16-1 downto (ticks_til_update)*16) := ram_data_o;
                         end if;
-                        sequence_logic <= sequence_logic;
                         sequence_count <= sequence_count;
                     end if;
-                when others => null;
+                when others => -- get ready to run
+                    ticks_til_update <= 100; 
+                    sequence_logic(63) <= '1'; -- Ensure D15 experiment trigger is low (inverted)
+                    sequence_count <= 0;
             end case;
         end if;
     end process;

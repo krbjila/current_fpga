@@ -160,12 +160,12 @@ state <= idle when ep00wire(1 downto 0) = "00" else
                     sequence_count <= 0;
                 when (run) =>
                     if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
-                        sequence_logic <= read_logic(62 downto 0);
                         if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
                             null;
                         else -- update outputs and ticks til next update
-                                ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
-                                sequence_count <= sequence_count+1;
+                            sequence_logic <= read_logic(62 downto 0);
+                            ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
+                            sequence_count <= sequence_count+1;
                         end if;
                     else  -- tick
                         ticks_til_update <= ticks_til_update - 1;
