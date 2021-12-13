@@ -169,7 +169,7 @@ ram_clk <= clk;
             case(state) is
                 when run => 
                     if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
-                        if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
+                        if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done
                             -- DON'T restart sequence!
                             sequence_count <= sequence_count;
                             sequence_logic(63) <= '1'; -- Ensure D15 experiment trigger is low (inverted)
