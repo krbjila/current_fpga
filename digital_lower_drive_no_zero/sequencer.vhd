@@ -168,12 +168,15 @@ ram_clk <= clk;
                 when idle => -- get ready to run
                     ticks_til_update <= 100; 
 --                    sequence_logic <= conv_std_logic_vector(0, 64);
+                    sequence_logic(63) <= '1'; -- Ensure D15 experiment trigger is low (inverted)
                     sequence_count <= 0;
                 when run => 
                     if ticks_til_update < 0 then -- something changes, we are adding 10 ns at each switch
                         sequence_logic <= read_logic(63 downto 0);
                         if conv_integer(read_logic(95 downto 64)) = 0 then -- the sequence is done. start over
-                            sequence_count <= 0;
+                            -- DON'T restart sequence!
+                            sequence_count <= sequence_count;
+                            sequence_logic(63) <= '1'; -- Ensure D15 experiment trigger is low (inverted)
                             ticks_til_update <= 10;
                         else -- update outputs and ticks til next update
                             ticks_til_update <= conv_integer(read_logic(95 downto 64)-2);
