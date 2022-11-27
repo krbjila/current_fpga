@@ -287,20 +287,6 @@ begin
         end if;
     end process;
    
-	
-	process (dac_count, clk, trig_state)
-	begin
-		if falling_edge(clk) then
-			if (trig_state /= run) then
-				force_write <= '1';
-			elsif dac_count = 7 then
-				force_write <= '0';
-			else
-				force_write <= force_write;
-			end if;
-		end if;
-	end process;
-
     -- control dac_bus
     process(trig_state, clk) is
     variable delta_voltage: integer range 0 to 2**16-1 := 0;
@@ -351,6 +337,13 @@ begin
                     sequence_count <= 0;
             end case;
         end if;
+		  if (trig_state /= run) then
+		      force_write <= '1';
+		  elsif dac_count = 7 then
+		      force_write <= '0';
+		  else
+		      force_write <= force_write;
+		  end if;
     end process;
 
 
