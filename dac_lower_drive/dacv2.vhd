@@ -85,6 +85,7 @@ architecture arch of dac is
     type nat_array is array(0 to 7) of natural;
     signal shift_bits       : nat_array := (others => 0);
     signal voltage_changed  : std_logic_vector(7 downto 0) := (others => '1');
+	 signal force_write      : std_logic := '1';
     
     type voltage_array is array(7 downto 0) of std_logic_vector(15 downto 0);
     signal manual_voltages : voltage_array;
@@ -116,7 +117,7 @@ begin
     ep20wire <= (others => '0');
 
     hi_muxsel <= '0';
-
+	 
     manual_voltages(0) <= ep01wire;
     manual_voltages(1) <= ep02wire;
     manual_voltages(2) <= ep03wire;
@@ -156,24 +157,41 @@ begin
             end if;
         end if;
     end process;
+	 
+	 clk <= clk_ext;
     
     -- Divide external clock by 4
-    process(clk_ext) is
-    variable count: integer range 0 to 3 := 0;
-    begin
-        if falling_edge(clk_ext) then
-            if count < 2 then
-                count := count + 1;
-                clk <= '0';
-            elsif count = 2 then
-                count := count + 1;
-                clk <= '1';
-            else
-                count := 0;
-                clk <= '1';
-            end if;
-        end if;
-    end process;
+--    process(clk_ext) is
+--    variable count: integer range 0 to 3 := 0;
+--    begin
+--        if falling_edge(clk_ext) then
+--            if count < 2 then
+--                count := count + 1;
+--                clk <= '0';
+--            elsif count = 2 then
+--                count := count + 1;
+--                clk <= '1';
+--            else
+--                count := 0;
+--                clk <= '1';
+--            end if;
+--        end if;
+--    end process;
+
+-- Divide external clock by 2
+--	 process(clk_ext) is
+--    variable count: integer range 0 to 1 := 0;
+--    begin
+--        if falling_edge(clk_ext) then
+--            if count = 0 then
+--                count := count + 1;
+--                clk <= '0';
+--            else
+--                count := 0;
+--                clk <= '1';
+--            end if;
+--        end if;
+--    end process;
     
     -- Clock the RAM with the PLL's 48 MHz clock when loading, external clock otherwise.
     process(ti_clk) is
@@ -215,33 +233,33 @@ begin
         if falling_edge(clk) then
             case (trig_state) is
             when run =>
-                if latch_count = 0 then 
-                            if voltage_changed(dac_count) = '1' then
-                                dac_cs(dac_count) <= '0';
-                            else
-                                dac_cs(dac_count) <= '1';
-                            end if;
-                    latch_count <= latch_count + 1;
-                elsif latch_count = 1 then
-                    dac_cs(dac_count) <= '1';
-                    if dac_count < 7 then
-                        dac_count <= dac_count + 1;
-                        latch_count <= 0;
-                    else 
-                        latch_count <= latch_count + 1;
-                        dac_count <= 0;
-                    end if;
-                        elsif latch_count = 2 then
-                    latch_count <= latch_count + 1;
-                        elsif latch_count = 3 then
-                            if or_reduce(voltage_changed) = '1' then
-                                ldac <= '1';
-                            end if;
-                    latch_count <= latch_count + 1;
-                else
-                    ldac <= '0';
-                    latch_count <= 0;
-                end if;
+               if latch_count = 0 then 
+  						if voltage_changed(dac_count) = '1' then
+	  						 dac_cs(dac_count) <= '0';
+		  				else
+						    dac_cs(dac_count) <= '1';
+						end if;
+                  latch_count <= latch_count + 1;
+               elsif latch_count = 1 then
+						dac_cs(dac_count) <= '1';
+                  if dac_count < 7 then
+                      dac_count <= dac_count + 1;
+                      latch_count <= 0;
+                  else 
+                      latch_count <= latch_count + 1;
+                      dac_count <= 0;
+                  end if;
+					elsif latch_count = 2 then
+						latch_count <= latch_count + 1;
+               elsif latch_count = 3 then
+                  if or_reduce(voltage_changed) = '1' then
+                      ldac <= '1';
+                  end if;
+                  latch_count <= latch_count + 1;
+               else
+                  ldac <= '0';
+                  latch_count <= 0;
+               end if;
             when others =>
                 dac_cs <= (others => '1');
                 ldac <= '0';
@@ -269,6 +287,19 @@ begin
         end if;
     end process;
    
+	
+	process (dac_count, clk, trig_state)
+	begin
+		if falling_edge(clk) then
+			if (trig_state /= run) then
+				force_write <= '1';
+			elsif dac_count = 7 then
+				force_write <= '0';
+			else
+				force_write <= force_write;
+			end if;
+		end if;
+	end process;
 
     -- control dac_bus
     process(trig_state, clk) is
@@ -292,13 +323,13 @@ begin
                             end if;
                         when 1 => 
                             if ticks_til_update(dac_count) = duration(dac_count) then -- if we just read new values
-                                            delta_voltage := to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(duration(dac_count), 48), shift_bits(dac_count)));
-                                           next_voltage(dac_count) <= next_voltage(dac_count) + delta_voltage;
-                                           if delta_voltage = 0 then
-                                               voltage_changed(dac_count) <= '0';
-                                            else
-                                               voltage_changed(dac_count) <= '1';
-                                            end if;
+										 delta_voltage := to_integer(shift_right(to_signed(step_size(dac_count), 48)*to_signed(duration(dac_count), 48), shift_bits(dac_count)));
+										 next_voltage(dac_count) <= next_voltage(dac_count) + delta_voltage;
+										 if delta_voltage = 0 and force_write = '0' then
+											  voltage_changed(dac_count) <= '0';
+										 else
+											  voltage_changed(dac_count) <= '1';
+										 end if;
                             end if;
                         when 4 =>
                             ticks_til_update(0) <= ticks_til_update(0) - 1;

@@ -28,7 +28,7 @@ manual_voltage_wires = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
 
 
 # bitfile = "dac.bit"
-bitfile = "C:\Users\Ye Lab\Desktop\Cal\current_fpga\dac_lower_drive\dac.bit"
+bitfile = "C:\\Users\\Ye Lab\\Desktop\\Cal\\current_fpga\\dac_lower_drive\\dac.bit"
 # bitfile = "blinky2.bit"
 
 def time_to_ticks(clk, time):
@@ -108,7 +108,12 @@ def acquire(dev, span):
     dev.clear()
     dev.write("STRF 0")
     dev.write("SPAN {}".format(span))
+
+    dev.write("AVGO 1")
     dev.write("NAVG 100")
+
+    dev.write("ARNG 0")
+    dev.write("IRNG -48")
 
     dev.write("STRT")
 
@@ -151,25 +156,13 @@ if __name__ == "__main__":
         fp.OpenBySerial(ser)
         id = fp.GetDeviceID()
         print("Checking {}".format(id))
-        if "KRbtest" in id:
+        if "KRbAnlg06" in id:
             print("Connecting to {}".format(id))
             device_found = True
             break
     if device_found:
         fp.ConfigureFPGA(bitfile)
         print("Bitfile loaded!")
-
-        dt = 1.0
-        # ramps = [
-        #     [{'dv':-10.0, 'dt':dt}, {'dv':20.0, 'dt':dt}, {'dv':-10.0, 'dt':dt}]*50,
-        #     [{'dv':0.0, 'dt':dt}, {'dv':-0.0, 'dt':dt}, {'dv':0.0, 'dt':dt}]*50,
-        #     [{'dv':-10.0, 'dt':dt}, {'dv':20.0, 'dt':dt}, {'dv':-10.0, 'dt':dt}]*50,
-        #     [{'dv':10.0, 'dt':dt}, {'dv':-20.0, 'dt':dt}, {'dv':10.0, 'dt':dt}]*50,
-        #     [{'dv':-10.0, 'dt':dt}, {'dv':20.0, 'dt':dt}, {'dv':-10.0, 'dt':dt}]*50,
-        #     [{'dv':10.0, 'dt':dt}, {'dv':-20.0, 'dt':dt}, {'dv':10.0, 'dt':dt}]*50,
-        #     [{'dv':-10.0, 'dt':dt}, {'dv':20.0, 'dt':dt}, {'dv':-10.0, 'dt':dt}]*50,
-        #     [{'dv':10.0, 'dt':dt}, {'dv':-20.0, 'dt':dt}, {'dv':10.0, 'dt':dt}]*50
-        # ]
 
         ramps = [
             [{'dv':0.0, 'dt':10.0}]*50,
@@ -182,21 +175,69 @@ if __name__ == "__main__":
             [{'dv':0.0, 'dt':10.0}]*50
         ]
 
-        print("Programming sequence")
-        program_sequence(ramps)
-        sleep(1)
-        print("Running sequence")
-        start_sequence()
-        sleep(0.2)
-        output_low = acquire(dev, 13) # 1.56 kHz span
-        output_high = acquire(dev, 19) # 100 kHz span
-        end_low = output_low[-1, 0]
-        idx = searchsorted(output_high[:,0], end_low)
-        merged = np.vstack((output_low, output_high[idx:,:]))
-        np.savetxt(fname, merged)
+        def generate_ramps(c):
+            ramps = []
+            for i in range(N_CHANNELS):
+                if i == c:
+                    ramps.append([{'dv':0.0, 'dt':10.0}]*50)
+                else:
+                    ramps.append([{'dv':10.0, 'dt':0.5}, {'dv':-20.0, 'dt':1.0}, {'dv':10.0, 'dt':0.5}]*100)
+            return ramps
+
+        data = []
+        data_ramps = []
+        n = N_CHANNELS
+        for c in range(n):
+            raw_input("Connect channel {} and press Enter to continue...".format(c))
+            print("Programming flat sequence")
+            program_sequence(ramps)
+            sleep(1)
+            print("Running flat sequence")
+            start_sequence()
+            sleep(2)
+            output_low = acquire(dev, 14) # 3.125 kHz span
+            output_high = acquire(dev, 19) # 100 kHz span
+            end_low = output_low[-1, 0]
+            idx = searchsorted(output_high[:,0], end_low)
+            merged = np.vstack((output_low, output_high[idx:,:]))
+            plt.loglog(merged[:,0], merged[:,1])
+            data.append(merged)
+
+            print("Programming ramps sequence")
+            program_sequence(generate_ramps(c))
+            sleep(1)
+            print("Running ramps sequence")
+            start_sequence()
+            sleep(0.5)
+            output_low = acquire(dev, 14) # 1.56 kHz span
+            output_high = acquire(dev, 19) # 100 kHz span
+            program_sequence(ramps)
+            sleep(0.5)
+            start_sequence()
+            end_low = output_low[-1, 0]
+            idx = searchsorted(output_high[:,0], end_low)
+            merged = np.vstack((output_low, output_high[idx:,:]))
+            plt.loglog(merged[:,0], merged[:,1])
+            plt.show()
+            data_ramps.append(merged)
         dev.close()
         print("Done acquiring!")
         fp.Close()
 
-        plt.loglog(merged[:, 0], merged[:, 1])
-        plt.show()    
+        cols = tuple([data[0][:,0]] + [c[:,1] for c in data] + [c[:,1] for c in data_ramps])
+        stacked_data = np.column_stack(cols)
+        np.savetxt(fname, stacked_data)
+
+        fig, ax = plt.subplots()
+        ax.set(xlabel='Frequency (Hz)', ylabel='Noise (V Hz^-1/2)', title='DAC Noise')
+        for c in range(n):
+            x = data[c][:,0]
+            y = data[c][:,1]
+            ax.loglog(x, y, label=c)
+
+            x = data_ramps[c][:,0]
+            y = data_ramps[c][:,1]
+            ax.loglog(x, y, label="{} (ramps)".format(c))
+
+        ax.legend()
+        plt.show()
